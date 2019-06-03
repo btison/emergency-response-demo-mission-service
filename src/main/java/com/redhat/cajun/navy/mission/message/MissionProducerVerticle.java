@@ -1,5 +1,8 @@
 package com.redhat.cajun.navy.mission.message;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import com.redhat.cajun.navy.mission.ErrorCodes;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.eventbus.Message;
@@ -9,9 +12,9 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.kafka.client.producer.KafkaProducer;
 import io.vertx.kafka.client.producer.KafkaProducerRecord;
 import io.vertx.kafka.client.producer.RecordMetadata;
-
-import java.util.HashMap;
-import java.util.Map;
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.config.SslConfigs;
 
 public class MissionProducerVerticle extends AbstractVerticle {
 
@@ -27,9 +30,16 @@ public class MissionProducerVerticle extends AbstractVerticle {
     @Override
     public void start() throws Exception {
 
-        config.put("bootstrap.servers", config().getString("kafka.connect", "localhost:9092"));
-        config.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        config.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config().getString("kafka.connect", "localhost:9092"));
+        config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+        config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+        config.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, config().getString("kafka.security.protocol"));
+        config.put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, config().getString("kafka.ssl.keystore.type"));
+        config.put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, config().getString("kafka.ssl.keystore.location"));
+        config.put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, config().getString("kafka.ssl.keystore.password"));
+        config.put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, config().getString("kafka.ssl.truststore.type"));
+        config.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, config().getString("kafka.ssl.truststore.location"));
+        config.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, config().getString("kafka.ssl.truststore.password"));
 
         missionUpdateCommandTopic = config().getString("kafka.pub");
         responderUpdateTopic = config().getString("kafka.pub.responder.update");
