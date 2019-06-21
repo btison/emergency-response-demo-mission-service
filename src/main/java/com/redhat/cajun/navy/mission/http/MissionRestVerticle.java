@@ -1,15 +1,26 @@
 package com.redhat.cajun.navy.mission.http;
 
+import java.net.HttpURLConnection;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+
 import com.redhat.cajun.navy.mission.ErrorCodes;
 import com.redhat.cajun.navy.mission.MessageAction;
 import com.redhat.cajun.navy.mission.MessageType;
 import com.redhat.cajun.navy.mission.MissionEvents;
 import com.redhat.cajun.navy.mission.cache.CacheAccessVerticle;
-import com.redhat.cajun.navy.mission.data.*;
+import com.redhat.cajun.navy.mission.data.Location;
+import com.redhat.cajun.navy.mission.data.Mission;
+import com.redhat.cajun.navy.mission.data.MissionStep;
+import com.redhat.cajun.navy.mission.data.Responder;
+import com.redhat.cajun.navy.mission.data.ResponderLocationHistory;
 import com.redhat.cajun.navy.mission.data.cmd.MissionCommand;
 import com.redhat.cajun.navy.mission.data.cmd.ResponderCommand;
 import com.redhat.cajun.navy.mission.map.RoutePlanner;
-
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.eventbus.Message;
@@ -22,15 +33,7 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.StaticHandler;
 import io.vertx.micrometer.PrometheusScrapingHandler;
-
 import rx.Observable;
-
-import java.net.HttpURLConnection;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.logging.Logger;
 
 
 public class MissionRestVerticle extends CacheAccessVerticle {
@@ -50,6 +53,7 @@ public class MissionRestVerticle extends CacheAccessVerticle {
     protected void init(Future<Void> startFuture) {
         String host = config().getString("http.host", "localhost");
         int port = config().getInteger("http.port", 8888);
+        int managementport = config().getInteger("management.port", 9080);
         MAPBOX_ACCESS_TOKEN = config().getString("map.token");
 
         vertx.eventBus().consumer(config().getString(CACHE_QUEUE, "cache.queue"), this::onMessage);
@@ -69,23 +73,47 @@ public class MissionRestVerticle extends CacheAccessVerticle {
         router.get(MISSIONS_EP + "/:key").handler(this::missionByKey);
         router.get(MISSIONS_EP + "/responders/:id").handler(this::getByResponder);
 
+        Router mgmtRouter = Router.router(vertx);
         HealthCheckHandler healthCheckHandler = HealthCheckHandler.create(vertx)
                 .register("health", f -> f.complete(Status.OK()));
-        router.get("/health").handler(healthCheckHandler);
+        mgmtRouter.get("/health").handler(healthCheckHandler);
 
-        router.route("/metrics").handler(PrometheusScrapingHandler.create());
+        mgmtRouter.route("/metrics").handler(PrometheusScrapingHandler.create());
+
+
+        Future<Void> httpServerFuture = Future.future();
+        Future<Void> managementServerFuture = Future.future();
 
 
         vertx.createHttpServer()
                 .requestHandler(router)
                 .listen(port, ar -> {
                     if (ar.succeeded()) {
-                        startFuture.complete();
+                        httpServerFuture.complete();
                         logger.info("Http Server Listening on: "+port);
                     } else {
-                        startFuture.fail(ar.cause());
+                        httpServerFuture.fail(ar.cause());
                     }
                 });
+
+        vertx.createHttpServer()
+                .requestHandler(mgmtRouter)
+                .listen(managementport, ar -> {
+                    if (ar.succeeded()) {
+                        managementServerFuture.complete();
+                        logger.info("Management Http Server Listening on: "+ managementport);
+                    } else {
+                        managementServerFuture.fail(ar.cause());
+                    }
+                });
+
+        CompositeFuture.all(httpServerFuture, managementServerFuture).setHandler(ar -> {
+            if (ar.succeeded()) {
+                startFuture.complete();
+            } else {
+                startFuture.fail(ar.cause());
+            }
+        });
     }
 
 
