@@ -1,16 +1,16 @@
 package com.redhat.cajun.navy.mission.data;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.redhat.cajun.navy.mission.util.DoubleContextualSerializer;
 import com.redhat.cajun.navy.mission.util.Precision;
 import io.vertx.core.json.Json;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Mission {
@@ -45,27 +45,12 @@ public class Mission {
     private List<ResponderLocationHistory> responderLocationHistory;
     private String status;
 
-    public void setSteps(List<MissionStep> steps) {
-        this.steps = steps;
-    }
-
     private List<MissionStep> steps = null;
 
     public Mission(){
         id = UUID.randomUUID().toString();
         responderLocationHistory = new ArrayList<>();
         steps = new ArrayList<MissionStep>();
-    }
-
-    public void addMissionStep(MissionStep step){
-        if(this.steps != null && step != null){
-            steps.add(step);
-        }
-        else throw new IllegalArgumentException("Null value not acceptable");
-    }
-
-    public List<MissionStep> getSteps() {
-        return steps;
     }
 
     public String getId() {
@@ -162,6 +147,20 @@ public class Mission {
         this.status = input;
     }
 
+    public List<MissionStep> getSteps() {
+        return steps;
+    }
+
+    public void setSteps(List<MissionStep> steps) {
+        this.steps = steps;
+    }
+
+    public void addMissionStep(MissionStep step){
+        if(this.steps != null && step != null){
+            steps.add(step);
+        }
+        else throw new IllegalArgumentException("Null value not acceptable");
+    }
 
     public String toJson() {
         return Json.encode(this);

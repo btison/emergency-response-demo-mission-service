@@ -1,6 +1,15 @@
 package com.redhat.cajun.navy.mission.message;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import com.redhat.cajun.navy.mission.ErrorCodes;
+import com.redhat.cajun.navy.mission.tracing.TracingKafkaProducer;
+import com.redhat.cajun.navy.mission.tracing.TracingUtils;
+import io.opentracing.Scope;
+import io.opentracing.Span;
+import io.opentracing.Tracer;
+import io.opentracing.util.GlobalTracer;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.json.JsonObject;
@@ -10,22 +19,23 @@ import io.vertx.kafka.client.producer.KafkaProducer;
 import io.vertx.kafka.client.producer.KafkaProducerRecord;
 import io.vertx.kafka.client.producer.RecordMetadata;
 
-import java.util.HashMap;
-import java.util.Map;
-
 public class MissionProducerVerticle extends AbstractVerticle {
 
     private final Logger logger = LoggerFactory.getLogger(MissionProducerVerticle.class.getName());
     private Map<String, String> config = new HashMap<>();
-    KafkaProducer<String,String> producer = null;
-    public static final String PUB_QUEUE = "pub.queue";
+    private KafkaProducer<String,String> producer = null;
+    private static final String PUB_QUEUE = "pub.queue";
 
-    public String missionUpdateCommandTopic = null;
-    public String responderUpdateTopic = null;
+    private String missionUpdateCommandTopic = null;
+    private String responderUpdateTopic = null;
+
+    private Tracer tracer;
 
 
     @Override
     public void start() throws Exception {
+
+        tracer = GlobalTracer.get();
 
         config.put("bootstrap.servers", config().getString("kafka.connect", "localhost:9092"));
         config.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
@@ -33,7 +43,7 @@ public class MissionProducerVerticle extends AbstractVerticle {
 
         missionUpdateCommandTopic = config().getString("kafka.pub");
         responderUpdateTopic = config().getString("kafka.pub.responder.update");
-        producer = KafkaProducer.create(vertx,config);
+        producer = TracingKafkaProducer.create(vertx, config, tracer);
         vertx.eventBus().consumer(PUB_QUEUE, this::onMessage);
     }
 
@@ -47,19 +57,24 @@ public class MissionProducerVerticle extends AbstractVerticle {
 
         String action = message.headers().get("action");
         String key = message.headers().get("key");
-        switch (action) {
-            case "PUBLISH_UPDATE":
-                sendMessage(missionUpdateCommandTopic, key, String.valueOf(message.body()));
-                message.reply("Message sent "+missionUpdateCommandTopic);
-                break;
-            case "RESPONDER_UPDATE":
-                sendMessage(responderUpdateTopic, key, String.valueOf(message.body()));
-                message.reply("Message Sent "+responderUpdateTopic);
-                break;
+        Span span = TracingUtils.buildChildSpan(action, message, tracer);
+        try (Scope scope = tracer.activateSpan(span)) {
+            switch (action) {
+                case "PUBLISH_UPDATE":
+                    sendMessage(missionUpdateCommandTopic, key, String.valueOf(message.body()));
+                    message.reply("Message sent " + missionUpdateCommandTopic);
+                    break;
+                case "RESPONDER_UPDATE":
+                    sendMessage(responderUpdateTopic, key, String.valueOf(message.body()));
+                    message.reply("Message Sent " + responderUpdateTopic);
+                    break;
 
-            default:
-                message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action);
+                default:
+                    message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action);
 
+            }
+        } finally {
+            span.finish();
         }
     }
 
@@ -68,6 +83,7 @@ public class MissionProducerVerticle extends AbstractVerticle {
 
         KafkaProducerRecord<String, String> record =
                 KafkaProducerRecord.create(topic, key, body);
+
 
         producer.write(record, done -> {
             if (done.succeeded()) {

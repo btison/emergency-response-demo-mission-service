@@ -19,6 +19,8 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <fabric8.generator.from>registry.access.redhat.com/redhat-openjdk-18/openjdk18-openshift:1.5</fabric8.generator.from>
     <infinispan.version>9.3.0.Final</infinispan.version>
+    <version.opentracing-kafka>0.1.4</version.opentracing-kafka>
+    <version.jaeger>0.35.1</version.jaeger>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -104,6 +106,17 @@
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-registry-influx</artifactId>
       <version>1.1.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.opentracing.contrib</groupId>
+      <artifactId>opentracing-kafka-client</artifactId>
+      <version>${version.opentracing-kafka}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.jaegertracing</groupId>
+      <artifactId>jaeger-client</artifactId>
+      <version>${version.jaeger}</version>
     </dependency>
 
     <!-- Testing -->

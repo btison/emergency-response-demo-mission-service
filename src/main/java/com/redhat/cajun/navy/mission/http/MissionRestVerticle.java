@@ -1,15 +1,30 @@
 package com.redhat.cajun.navy.mission.http;
 
+import java.net.HttpURLConnection;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+
 import com.redhat.cajun.navy.mission.ErrorCodes;
 import com.redhat.cajun.navy.mission.MessageAction;
 import com.redhat.cajun.navy.mission.MessageType;
 import com.redhat.cajun.navy.mission.MissionEvents;
 import com.redhat.cajun.navy.mission.cache.CacheAccessVerticle;
-import com.redhat.cajun.navy.mission.data.*;
+import com.redhat.cajun.navy.mission.data.Location;
+import com.redhat.cajun.navy.mission.data.Mission;
+import com.redhat.cajun.navy.mission.data.MissionStep;
+import com.redhat.cajun.navy.mission.data.Responder;
+import com.redhat.cajun.navy.mission.data.ResponderLocationHistory;
 import com.redhat.cajun.navy.mission.data.cmd.MissionCommand;
 import com.redhat.cajun.navy.mission.data.cmd.ResponderCommand;
 import com.redhat.cajun.navy.mission.map.RoutePlanner;
-
+import com.redhat.cajun.navy.mission.tracing.TracingUtils;
+import io.opentracing.Scope;
+import io.opentracing.Span;
+import io.opentracing.Tracer;
+import io.opentracing.util.GlobalTracer;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.eventbus.Message;
@@ -22,15 +37,7 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.StaticHandler;
 import io.vertx.micrometer.PrometheusScrapingHandler;
-
 import rx.Observable;
-
-import java.net.HttpURLConnection;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.logging.Logger;
 
 
 public class MissionRestVerticle extends CacheAccessVerticle {
@@ -39,15 +46,17 @@ public class MissionRestVerticle extends CacheAccessVerticle {
 
     private final Logger logger = Logger.getLogger(MissionRestVerticle.class.getName());
 
-    public static final String CACHE_QUEUE = "cache.queue";
+    private static final String CACHE_QUEUE = "cache.queue";
 
-    public static final String PUB_QUEUE = "pub.queue";
+    private static final String PUB_QUEUE = "pub.queue";
 
     private String MAPBOX_ACCESS_TOKEN = null;
 
+    private Tracer tracer;
 
     @Override
     protected void init(Future<Void> startFuture) {
+        tracer = GlobalTracer.get();
         String host = config().getString("http.host", "localhost");
         int port = config().getInteger("http.port", 8888);
         MAPBOX_ACCESS_TOKEN = config().getString("map.token");
@@ -98,67 +107,71 @@ public class MissionRestVerticle extends CacheAccessVerticle {
         }
 
         String action = message.headers().get("action");
-        switch (action) {
-            case "CREATE_ENTRY":
-                Mission m = Json.decodeValue(String.valueOf(message.body()), MissionCommand.class).getBody();
-                m.setStatus(MissionEvents.CREATED.getActionType());
+        Span span = TracingUtils.buildChildSpan(action, message, tracer);
+        try (Scope scope = tracer.activateSpan(span)) {
+            switch (action) {
+                case "CREATE_ENTRY":
 
-                // Incase the responders lat,longs are not viable
-                if(m.getResponderStartLat() == 0)
-                    m.setResponderStartLat(m.getIncidentLat());
-                if(m.getResponderStartLong() == 0)
-                    m.setResponderStartLat(m.getIncidentLong());
+                    Mission m = Json.decodeValue(String.valueOf(message.body()), MissionCommand.class).getBody();
+                    m.setStatus(MissionEvents.CREATED.getActionType());
 
-                List<MissionStep> steps = new RoutePlanner(MAPBOX_ACCESS_TOKEN).getMapboxDirectionsRequest(
-                        new Location(m.getResponderStartLat(), m.getResponderStartLong()),
-                        new Location(m.getDestinationLat(), m.getDestinationLong()),
-                        new Location(m.getIncidentLat(), m.getIncidentLong()));
+                    // Incase the responders lat,longs are not viable
+                    if (m.getResponderStartLat() == 0)
+                        m.setResponderStartLat(m.getIncidentLat());
+                    if (m.getResponderStartLong() == 0)
+                        m.setResponderStartLat(m.getIncidentLong());
 
-                m.setSteps(steps);
+                    List<MissionStep> steps = new RoutePlanner(MAPBOX_ACCESS_TOKEN).getMapboxDirectionsRequest(
+                            new Location(m.getResponderStartLat(), m.getResponderStartLong()),
+                            new Location(m.getDestinationLat(), m.getDestinationLong()),
+                            new Location(m.getIncidentLat(), m.getIncidentLong()));
 
-                defaultCache.putAsync(m.getKey(), m.toString())
-                        .whenComplete((s, t) -> {
-                            if(t==null) {
-                                message.reply(m.toString());
-                            }
-                            else {
-                                message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action + " Unable to update mission");
-                            }
-                        });
+                    m.setSteps(steps);
 
-                sendUpdate(m, MessageType.MissionStartedEvent);
+                    defaultCache.putAsync(m.getKey(), m.toString())
+                            .whenComplete((s, t) -> {
+                                if (t == null) {
+                                    message.reply(m.toString());
+                                } else {
+                                    message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action + " Unable to update mission");
+                                }
+                            });
 
-                break;
+                    sendUpdate(m, MessageType.MissionStartedEvent);
 
-            case "UPDATE_ENTRY":
-                Responder responder = Json.decodeValue(String.valueOf(message.body()), Responder.class);
-                Mission mission = missionByKey(responder.getIncidentId()+responder.getResponderId());
+                    break;
 
-                if(mission != null) {
-                    ResponderLocationHistory history = new ResponderLocationHistory(System.currentTimeMillis(), responder.getLat(), responder.getLon());
-                    mission.addResponderLocationHistory(history);
+                case "UPDATE_ENTRY":
+                    Responder responder = Json.decodeValue(String.valueOf(message.body()), Responder.class);
+                    Mission mission = missionByKey(responder.getIncidentId() + responder.getResponderId());
 
-                    // We are only interested in the following status for MissionEvents
-                    if(responder.getStatus() == Responder.Status.PICKEDUP) {
-                        mission.setStatus(MissionEvents.UPDATED.getActionType());
-                        sendUpdate(mission, MessageType.MissionPickedUpEvent);
-                    }
-                    else if(responder.getStatus() == Responder.Status.DROPPED) {
-                        mission.setStatus(MissionEvents.COMPLETED.getActionType());
-                        sendUpdate(mission, MessageType.MissionCompletedEvent);
-                        sendUpdate(responder, MessageType.UpdateResponderCommand, true);
-                    }
-                    // removed async all, since cache update was ambiguous
-                    defaultCache.put(mission.getKey(), mission.toString());
-                    message.reply(mission.toString());
-                }
-                else message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action +" MissionId Doest not exist");
+                    if (mission != null) {
+                        ResponderLocationHistory history = new ResponderLocationHistory(System.currentTimeMillis(), responder.getLat(), responder.getLon());
+                        mission.addResponderLocationHistory(history);
 
-                break;
+                        // We are only interested in the following status for MissionEvents
+                        if (responder.getStatus() == Responder.Status.PICKEDUP) {
+                            mission.setStatus(MissionEvents.UPDATED.getActionType());
+                            sendUpdate(mission, MessageType.MissionPickedUpEvent);
+                        } else if (responder.getStatus() == Responder.Status.DROPPED) {
+                            mission.setStatus(MissionEvents.COMPLETED.getActionType());
+                            sendUpdate(mission, MessageType.MissionCompletedEvent);
+                            sendUpdate(responder, MessageType.UpdateResponderCommand, true);
+                        }
+                        // removed async all, since cache update was ambiguous
+                        defaultCache.put(mission.getKey(), mission.toString());
+                        message.reply(mission.toString());
+                    } else
+                        message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action + " MissionId Doest not exist");
 
-            default:
-                message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action);
+                    break;
 
+                default:
+                    message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action);
+
+            }
+        } finally {
+            span.finish();
         }
     }
 
@@ -170,6 +183,7 @@ public class MissionRestVerticle extends CacheAccessVerticle {
 
         DeliveryOptions options = new DeliveryOptions().addHeader("action", MessageAction.PUBLISH_UPDATE.toString())
                 .addHeader("key", m.getIncidentId());
+        TracingUtils.injectInEventBusMessage(tracer.activeSpan().context(), options, tracer);
         vertx.eventBus().send(PUB_QUEUE, mc.toString(), options, reply -> {
             if (reply.failed()) {
                 System.err.println("Message publish request not accepted while sending update "+event);
@@ -183,7 +197,7 @@ public class MissionRestVerticle extends CacheAccessVerticle {
         ResponderCommand rc = new ResponderCommand(responder, event.getMessageType());
         DeliveryOptions options = new DeliveryOptions().addHeader("action", MessageAction.RESPONDER_UPDATE.toString())
                 .addHeader("key", responder.getIncidentId());
-
+        TracingUtils.injectInEventBusMessage(tracer.activeSpan().context(), options, tracer);
         vertx.eventBus().send(PUB_QUEUE, rc.getResponderCommand(available), options, reply -> {
             if (reply.failed()) {
                 System.err.println("Message publish request not accepted while sending update "+event);
