@@ -45,12 +45,15 @@ public class MissionRestVerticle extends CacheAccessVerticle {
 
     private String MAPBOX_ACCESS_TOKEN = null;
 
+    private String mapboxBaseUrl = null;
+
 
     @Override
     protected void init(Future<Void> startFuture) {
         String host = config().getString("http.host", "localhost");
         int port = config().getInteger("http.port", 8888);
         MAPBOX_ACCESS_TOKEN = config().getString("map.token");
+        mapboxBaseUrl = config().getString("map.baseUrl");
 
         vertx.eventBus().consumer(config().getString(CACHE_QUEUE, "cache.queue"), this::onMessage);
 
@@ -109,7 +112,7 @@ public class MissionRestVerticle extends CacheAccessVerticle {
                 if(m.getResponderStartLong() == 0)
                     m.setResponderStartLat(m.getIncidentLong());
 
-                List<MissionStep> steps = new RoutePlanner(MAPBOX_ACCESS_TOKEN).getMapboxDirectionsRequest(
+                List<MissionStep> steps = new RoutePlanner(MAPBOX_ACCESS_TOKEN, mapboxBaseUrl).getMapboxDirectionsRequest(
                         new Location(m.getResponderStartLat(), m.getResponderStartLong()),
                         new Location(m.getDestinationLat(), m.getDestinationLong()),
                         new Location(m.getIncidentLat(), m.getIncidentLong()));

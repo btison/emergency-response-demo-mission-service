@@ -1,7 +1,12 @@
 package com.redhat.cajun.navy.mission.map;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
 import com.mapbox.api.directions.v5.DirectionsCriteria;
 import com.mapbox.api.directions.v5.MapboxDirections;
+import com.mapbox.api.directions.v5.MapBoxSimulatorDirections;
 import com.mapbox.api.directions.v5.models.DirectionsResponse;
 import com.mapbox.api.directions.v5.models.DirectionsRoute;
 import com.mapbox.api.directions.v5.models.LegStep;
@@ -12,23 +17,23 @@ import com.redhat.cajun.navy.mission.data.MissionStep;
 import retrofit2.Response;
 import rx.Observable;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-
 
 public class RoutePlanner {
 
     private String MAPBOX_ACCESS_TOKEN = null;
 
+    private String mapboxBaseUrl;
+
     private boolean hasWayPoint = false;
-    public RoutePlanner(String MAPBOX_ACCESS_TOKEN) {
+    public RoutePlanner(String MAPBOX_ACCESS_TOKEN, String mapboxBaseUrl) {
         this.MAPBOX_ACCESS_TOKEN = MAPBOX_ACCESS_TOKEN;
+        this.mapboxBaseUrl = mapboxBaseUrl;
     }
 
     public List<MissionStep> getMapboxDirectionsRequest(Location origin, Location destination, Location waypoint) {
 
-        MapboxDirections request = MapboxDirections.builder()
+        MapboxDirections request = MapBoxSimulatorDirections.builder()
+                .baseUrl(mapboxBaseUrl)
                 .accessToken(MAPBOX_ACCESS_TOKEN)
                 .origin(Point.fromLngLat(origin.getLong(), origin.getLat()))
                 .destination(Point.fromLngLat(destination.getLong(), destination.getLat()))
@@ -37,6 +42,7 @@ public class RoutePlanner {
                 .profile(DirectionsCriteria.PROFILE_DRIVING)
                 .steps(true)
                 .build();
+        System.out.println(request);
         List<MissionStep> missionSteps = new ArrayList<>();
         try {
 
