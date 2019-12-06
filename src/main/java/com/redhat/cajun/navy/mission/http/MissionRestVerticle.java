@@ -1,15 +1,25 @@
 package com.redhat.cajun.navy.mission.http;
 
+import java.net.HttpURLConnection;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+
 import com.redhat.cajun.navy.mission.ErrorCodes;
 import com.redhat.cajun.navy.mission.MessageAction;
 import com.redhat.cajun.navy.mission.MessageType;
 import com.redhat.cajun.navy.mission.MissionEvents;
 import com.redhat.cajun.navy.mission.cache.CacheAccessVerticle;
-import com.redhat.cajun.navy.mission.data.*;
+import com.redhat.cajun.navy.mission.data.Location;
+import com.redhat.cajun.navy.mission.data.Mission;
+import com.redhat.cajun.navy.mission.data.MissionStep;
+import com.redhat.cajun.navy.mission.data.Responder;
+import com.redhat.cajun.navy.mission.data.ResponderLocationHistory;
 import com.redhat.cajun.navy.mission.data.cmd.MissionCommand;
 import com.redhat.cajun.navy.mission.data.cmd.ResponderCommand;
 import com.redhat.cajun.navy.mission.map.RoutePlanner;
-
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.eventbus.Message;
@@ -22,15 +32,7 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.StaticHandler;
 import io.vertx.micrometer.PrometheusScrapingHandler;
-
 import rx.Observable;
-
-import java.net.HttpURLConnection;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.logging.Logger;
 
 
 public class MissionRestVerticle extends CacheAccessVerticle {
@@ -146,7 +148,7 @@ public class MissionRestVerticle extends CacheAccessVerticle {
                     else if(responder.getStatus() == Responder.Status.DROPPED) {
                         mission.setStatus(MissionEvents.COMPLETED.getActionType());
                         sendUpdate(mission, MessageType.MissionCompletedEvent);
-                        sendUpdate(responder, MessageType.UpdateResponderCommand, true);
+                        sendUpdate(responder, MessageType.UpdateResponderCommand, true, false);
                     }
                     // removed async all, since cache update was ambiguous
                     defaultCache.put(mission.getKey(), mission.toString());
@@ -179,12 +181,12 @@ public class MissionRestVerticle extends CacheAccessVerticle {
     }
 
 
-    private void sendUpdate(Responder responder, MessageType event, boolean available) {
+    private void sendUpdate(Responder responder, MessageType event, boolean available, boolean enrolled) {
         ResponderCommand rc = new ResponderCommand(responder, event.getMessageType());
         DeliveryOptions options = new DeliveryOptions().addHeader("action", MessageAction.RESPONDER_UPDATE.toString())
                 .addHeader("key", responder.getIncidentId());
 
-        vertx.eventBus().send(PUB_QUEUE, rc.getResponderCommand(available), options, reply -> {
+        vertx.eventBus().send(PUB_QUEUE, rc.getResponderCommand(available, enrolled), options, reply -> {
             if (reply.failed()) {
                 System.err.println("Message publish request not accepted while sending update "+event);
             }
@@ -213,7 +215,7 @@ public class MissionRestVerticle extends CacheAccessVerticle {
                 r.setIncidentId(m.getIncidentId());
                 r.setLat(m.getDestinationLat());
                 r.setLon(m.getDestinationLong());
-                sendUpdate(r, MessageType.UpdateResponderCommand, true);
+                sendUpdate(r, MessageType.UpdateResponderCommand, true, false);
             }
             return Observable.just(m);
         }).subscribe();

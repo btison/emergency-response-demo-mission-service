@@ -1,9 +1,9 @@
 package com.redhat.cajun.navy.mission.data.cmd;
 
+import java.util.UUID;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.redhat.cajun.navy.mission.data.Responder;
-
-import java.util.UUID;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ResponderCommand {
@@ -22,7 +22,7 @@ public class ResponderCommand {
     }
 
 
-    public String getResponderCommand(boolean available){
+    public String getResponderCommand(boolean available, boolean enrolled) {
 
         return "{ \"messageType\": \""+messageType+"\", " +
                 "\"id\": \""+id+"\", " +
@@ -31,6 +31,7 @@ public class ResponderCommand {
                 "\"body\": { \"responder\": { \"id\": "+responder.getResponderId()+", " +
                 "\"latitude\": "+responder.getLat()+", " +
                 "\"longitude\": "+responder.getLon()+", " +
+                "\"enrolled\": " + enrolled + ", " +
                 "\"available\": "+available+" } } }";
     }
 
