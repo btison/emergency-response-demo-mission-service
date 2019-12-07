@@ -146,6 +146,7 @@ public class MissionRestVerticle extends CacheAccessVerticle {
                         sendUpdate(mission, MessageType.MissionPickedUpEvent);
                     }
                     else if(responder.getStatus() == Responder.Status.DROPPED) {
+                        logger.info("Responder dropped. Id = " + responder.getResponderId() + ", person = " + responder.isHuman());
                         mission.setStatus(MissionEvents.COMPLETED.getActionType());
                         sendUpdate(mission, MessageType.MissionCompletedEvent);
                         sendUpdate(responder, MessageType.UpdateResponderCommand, true, false);
