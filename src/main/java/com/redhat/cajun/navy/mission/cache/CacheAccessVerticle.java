@@ -26,8 +26,7 @@ public abstract class CacheAccessVerticle extends AbstractVerticle {
         vertx.<RemoteCache<String, String>>executeBlocking(fut -> {
 
             client = new RemoteCacheManager(getConfigBuilder().build());
-
-            RemoteCache<String, String> cache = client.getCache();
+            RemoteCache<String, String> cache = client.administration().getOrCreateCache("disaster", "default");
             fut.complete(cache);
 
         }, res -> {

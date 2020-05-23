@@ -27,7 +27,7 @@ class ClientConfiguration {
     }
 
     static ConfigurationBuilder create(String svcName, String saslName, String user, String password) {
-        createTruststoreFromCrtFile(CRT_PATH, TRUSTSTORE_PATH, TRUSTSTORE_PASSWORD);
+        //createTruststoreFromCrtFile(CRT_PATH, TRUSTSTORE_PATH, TRUSTSTORE_PASSWORD);
 
         final ConfigurationBuilder cfg = new ConfigurationBuilder();
 
@@ -39,14 +39,9 @@ class ClientConfiguration {
                 .enable()
                 .username(user)
                 .password(password)
-                .realm("ApplicationRealm")
+                .realm("default")
                 .serverName(saslName)
-                .saslMechanism("DIGEST-MD5")
-                .saslQop(SaslQop.AUTH)
-                .ssl()
-                .enable()
-                .trustStoreFileName(TRUSTSTORE_PATH)
-                .trustStorePassword(TRUSTSTORE_PASSWORD);
+                .saslMechanism("PLAIN");
 
         return cfg;
     }
