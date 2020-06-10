@@ -12,6 +12,9 @@ import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
 
 public abstract class CacheAccessVerticle extends AbstractVerticle {
 
+    private static final String CACHE_NAME_VARIABLE = "MISSION_CACHE_NAME";
+    private static final String CACHE_NAME_DEFAULT = "mission";
+
     private final Logger logger = LoggerFactory.getLogger(CacheAccessVerticle.class.getName());
 
     protected RemoteCacheManager client;
@@ -22,20 +25,25 @@ public abstract class CacheAccessVerticle extends AbstractVerticle {
     @Override
     public void start(Future<Void> startFuture) {
 
-
+        String cacheNameTemp = System.getenv(CACHE_NAME_VARIABLE);
+        if(cacheNameTemp == null || cacheNameTemp.equals(""))
+            cacheNameTemp = CACHE_NAME_DEFAULT;
+        final String cacheName = cacheNameTemp;
+       
+        logger.info("start() cacheName = "+cacheName); 
         vertx.<RemoteCache<String, String>>executeBlocking(fut -> {
 
-            client = new RemoteCacheManager(getConfigBuilder().build());
-            RemoteCache<String, String> cache = client.administration().getOrCreateCache("disaster", "default");
-            fut.complete(cache);
+        client = new RemoteCacheManager(getConfigBuilder().build());
+        RemoteCache<String, String> cache = client.administration().getOrCreateCache(cacheName, "default");
+        fut.complete(cache);
 
         }, res -> {
             if (res.succeeded()) {
-                logger.info("Cache connection successfully done");
+                logger.info("Cache connection successfully done to cache: "+cacheName);
                 defaultCache = res.result();
                 init(startFuture);
             } else {
-                logger.fatal("Cache connection error");
+                logger.fatal("Cache connection error to: "+ cacheName);
                 startFuture.fail(res.cause());
             }
         });
